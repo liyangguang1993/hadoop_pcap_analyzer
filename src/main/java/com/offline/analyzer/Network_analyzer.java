@@ -8,6 +8,7 @@ import java.util.Iterator;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.ObjectWritable;
 import org.apache.hadoop.io.Text;
@@ -28,9 +29,12 @@ import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.maxmind.geoip2.model.CountryResponse;
 import com.maxmind.geoip2.record.Country;
+import com.offline.Package_IO.BinaryUtils;
+import com.offline.Package_IO.Bytes;
+import com.offline.Package_IO.PcapRec;
 
-import com.offline.Package_IO.CombinePcapInputFormat;
-import com.offline.Package_IO.Packet;
+import com.offline.Package_IO.CommonData;
+import com.offline.Package_IO.PcapInputFormat;
 
 public class Network_analyzer {
 		
@@ -38,7 +42,10 @@ public class Network_analyzer {
 	public JobConf conf;
 	public long period;
 	public int hour=60*60*1000;
-	
+	private String srcFileName;
+	private String dstFileName;
+	private long cap_start;
+	private long cap_end;
 	public Network_analyzer(){
 		this.conf = new JobConf();
 		this.period = 24;
@@ -46,7 +53,9 @@ public class Network_analyzer {
 	
 	public Network_analyzer(JobConf conf){
 		this.conf = conf;
-		this.period = conf.getInt("pcap.record.rate.period", 0);
+		this.period = conf.getInt("pcap.record.rate.period", 24);
+		this.srcFileName = conf.getStrings("pcap.record.srcDir")[0];
+		this.dstFileName = conf.getStrings("pcap.record.dstDir")[0];
 	}
 	
 	/*
@@ -55,18 +64,19 @@ public class Network_analyzer {
 	 * @param
 	 * @return  
 	 */
-    public void start(Path inputDir, String outputDir, long cap_start, long cap_end){// throws IOException {//分析程序入口
+    public void start(){// throws IOException {//分析程序入口
         
-    	System.out.println("start1");
+    	System.out.println("start");
     	try{
     		Date date = new Date();
     		long time = date.getTime();
     		time =  time-(time+8*hour)%(period*hour);
     		String Date = Long.toString(time);
 
-    		String dstFilename= outputDir + "country_period/"+Date+"/";
+    		String dstFilename= this.dstFileName + "country_period/"+Date+"/";
     	    Path output_path = new Path(dstFilename);
-
+    	    Path inputDir = new Path(this.srcFileName);
+    	    
 	        FileSystem fs = FileSystem.get(conf);
 	        JobConf State1 = get_state1_JobConf("state1", output_path, inputDir);   
 	        // delete any output that might exist from a previous run of this job
@@ -75,7 +85,7 @@ public class Network_analyzer {
 	        }
 	        JobClient.runJob(State1);  
 
-	        dstFilename= outputDir + "country_total/"+Date+"/";
+	        dstFilename= this.dstFileName + "country_total/"+Date+"/";
 	        output_path = new Path(dstFilename);
 	        Path state2_inputPath = FileOutputFormat.getOutputPath(State1);
 	        JobConf total_count = get_state2_JobConf("state2", state2_inputPath, output_path);  
@@ -98,16 +108,11 @@ public class Network_analyzer {
         conf.setNumReduceTasks(1);       
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(LongWritable.class);	       
-       	conf.setInputFormat(CombinePcapInputFormat.class);          
+       	conf.setInputFormat(PcapInputFormat.class);          
         conf.setOutputFormat(TextOutputFormat.class);     
         conf.setMapperClass(Map_Stats1.class);
-        conf.setCombinerClass(Reduce_Stats1.class);          
-        conf.setReducerClass(Reduce_Stats1.class);    
-
-        MultipleOutputs.addNamedOutput(conf,"pcsrc",TextOutputFormat.class,Text.class,LongWritable.class);  
-        MultipleOutputs.addNamedOutput(conf,"pcdst",TextOutputFormat.class,Text.class,LongWritable.class); 
-        MultipleOutputs.addNamedOutput(conf,"bcsrc",TextOutputFormat.class,Text.class,LongWritable.class);  
-        MultipleOutputs.addNamedOutput(conf,"bcdst",TextOutputFormat.class,Text.class,LongWritable.class); 
+        //conf.setCombinerClass(Reduce_Stats1.class);          
+        conf.setReducerClass(Reduce_Stats1.class);   
         
         FileInputFormat.setInputPaths(conf, inFilePath);
         FileOutputFormat.setOutputPath(conf, outFilePath);
@@ -135,18 +140,10 @@ public class Network_analyzer {
 	} 
 	
 	public static class Map_Stats1 extends MapReduceBase 
-	implements Mapper<LongWritable, ObjectWritable, Text, LongWritable>{
-		private int interval = 60;		
-	    private Object object;
-	    private Packet packet;
-	    private int ip_version;
-	    private long timestamp;
+	implements Mapper<LongWritable, BytesWritable, Text, LongWritable>{
 	    private String src_ip;
 	    private String dst_ip;
-	    private int bc;
-	    private Text text = new Text();
-		private LongWritable longwrite = new LongWritable();
-		private String[] dbDir;
+		private String dbDir;
 		private InetAddress ipAddress;
 		private File database;
 		private DatabaseReader reader;
@@ -154,10 +151,24 @@ public class Network_analyzer {
 		private Country country;
 		private String country_name;
 		private boolean exist;
+		
+		private int interval = 60;		
+		private byte[] ip_ver = new byte[1];									
+		private byte[] timestamp = new byte[4];			
+		private byte[] caplen = new byte[4];
+		private byte[] ipv4 = new byte[4];
+		private byte[] ipv6 = new byte[16];
+		private long Caplen;
+		private long Timestamp;
+		private byte[] value_bytes;
+		
+	    private Text text = new Text();
+		private LongWritable longwrite = new LongWritable();
+		
 		public void configure(JobConf conf){
 			interval = conf.getInt("pcap.record.rate.interval", 0);		
-			dbDir = conf.getStrings("pcap.record.dbDir");
-			database = new File(dbDir[0]+"GeoLite2-Country.mmdb");
+			dbDir = conf.getStrings("pcap.record.dbDir")[0];
+			database = new File(dbDir+"GeoLite2-Country.mmdb");
 			 try {
 				reader = new DatabaseReader.Builder(database).build();
 			} catch (IOException e) {
@@ -167,84 +178,134 @@ public class Network_analyzer {
 		}	
 		
 		public void map		
-				(LongWritable key, ObjectWritable value, 
+				(LongWritable key, BytesWritable value, 
 				OutputCollector<Text, LongWritable> output, Reporter reporter) throws IOException {		
+			value_bytes = value.getBytes();
+			if(value_bytes.length < 42) return;//若不够长则不分析
 			
-			packet = (Packet)value.get();
-	        if (packet != null) {
-	        	object = packet.get(Packet.IP_VERSION);
-	        	
-	            if (object != null) {
-	            	ip_version = (Integer)object;
-	            	timestamp = (Long)packet.get(Packet.TIMESTAMP);
-	            	timestamp = timestamp - timestamp%interval;
-	            	
-	            	if(ip_version == 4 || ip_version == 6){
-	            		
-	            		bc = (Integer) packet.get(Packet.LEN);
-	            		src_ip = (String)packet.get(Packet.SRC);
-	            		
-	            		exist = true;
-	            		ipAddress = InetAddress.getByName(src_ip);
-	            		try {
-							response = reader.country(ipAddress);
-						} catch (GeoIp2Exception e) {
-							exist = false;
-						}
-	            		
-	            		if(exist == true){
-	            			country = response.getCountry();
-		            		country_name = get_country(country.getName());
-		            		
-		            		text.clear();
-		            		text.set("bc\tsrc\t" + Long.toString(timestamp) + "\t" + country_name);
-							longwrite.set(bc);
-							output.collect(text, longwrite);	
-							text.clear();
-		            		text.set("pc\tsrc\t" + Long.toString(timestamp) + "\t" + country_name);
-							longwrite.set(1);
-							output.collect(text, longwrite);	
-							
-		            		dst_ip = (String)packet.get(Packet.DST);
-	            		}
-	            		
-	            		exist = true;
-	            		ipAddress = InetAddress.getByName(dst_ip);
-	            		try {
-							response = reader.country(ipAddress);
-						} catch (GeoIp2Exception e) {
-							exist = false;
-						}
-	            		if(exist == true){
-	            			country = response.getCountry();
-		            		country_name = get_country(country.getName());
-		       
-		            		text.clear();
-							text.set("bc\tdst\t"+Long.toString(timestamp) + "\t" + country_name);
-							longwrite.set(bc);
-							output.collect(text, longwrite);	
-							text.clear();
-							text.set("pc\tdst\t"+Long.toString(timestamp) + "\t" + country_name);
-							longwrite.set(1);
-							output.collect(text, longwrite);	
-	            		}
-	            		
-	            	}else{
-	            		//TODO
-	            		//如何处理非ipv4或ipv6的数据包？
-	            	}
-	            }else{//object != null
-	            	//TODO
-	            	//IP_version = null
-	            }//if(IP)
-	        }
+			//获取时间戳
+			System.arraycopy(value_bytes, PcapRec.POS_TSTAMP, timestamp, 0 , PcapRec.LEN_TSTAMP);	
+			Timestamp = Bytes.toLong(BinaryUtils.flipBO(timestamp,4));
+			Timestamp = Timestamp - (Timestamp%interval);
+
+			//获取数据包长度
+			System.arraycopy(value_bytes, PcapRec.POS_CAPLEN, caplen, 0 , PcapRec.LEN_CAPLEN);	
+			Caplen = Bytes.toInt(BinaryUtils.flipBO(caplen, 4));
+			
+			//获取ip-version
+			System.arraycopy(value_bytes, PcapRec.POS_IP_VER, ip_ver, 0, PcapRec.LEN_IP_VER);
+			 ip_ver[0] = (byte) (ip_ver[0]&0xf0);	
+			if(ip_ver[0]== PcapRec.IPV4){
+				//获取IPV4地址
+				System.arraycopy(value_bytes, 42, ipv4, 0, ipv4.length);
+				src_ip = CommonData.longTostrIp(Bytes.toLong(ipv4));
+				System.arraycopy(value_bytes, 46, ipv4, 0, ipv4.length);
+				dst_ip = CommonData.longTostrIp(Bytes.toLong(ipv4));
+
+				//获取所在国家
+				ipAddress = InetAddress.getByName(src_ip);
+				try {
+					response = reader.country(ipAddress);
+					exist = true;
+				} catch (GeoIp2Exception e) {
+					exist = false;
+				}
+				if(exist == true){
+        			country = response.getCountry();
+            		country_name = get_country(country.getName());
+            		text.clear();
+            		text.set("src\t" + Long.toString(Timestamp) + "\t" + country_name);
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);	
+				}else{
+            		text.clear();
+            		text.set("src\t" + Long.toString(Timestamp) + "\tOTHERS");
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);
+				}
+				
+				ipAddress = InetAddress.getByName(dst_ip);
+				try {
+					response = reader.country(ipAddress);
+					exist = true;
+				} catch (GeoIp2Exception e) {
+					exist = false;
+				}
+				if(exist == true){
+        			country = response.getCountry();
+            		country_name = get_country(country.getName());
+            		text.clear();
+            		text.set("dst\t" + Long.toString(Timestamp) + "\t" + country_name);
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);	
+				}else{
+            		text.clear();
+            		text.set("dst\t" + Long.toString(Timestamp) + "\tOTHERS");
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);
+				}
+				
+			}else if(ip_ver[0]== PcapRec.IPV6){
+				//获取IPV6地址
+				System.arraycopy(value_bytes, 38, ipv6, 0, ipv6.length);
+				src_ip = CommonData.BytesToStrIPv6(ipv6);
+				System.arraycopy(value_bytes, 54, ipv6, 0, ipv6.length);
+				dst_ip = CommonData.BytesToStrIPv6(ipv6);
+	
+				//获取所在国家
+				ipAddress = InetAddress.getByName(src_ip);
+				try {
+					response = reader.country(ipAddress);
+					exist = true;
+				} catch (GeoIp2Exception e) {
+					exist = false;
+				}
+				if(exist == true){
+        			country = response.getCountry();
+            		country_name = get_country(country.getName());
+            		text.clear();
+            		text.set("src\t" + Long.toString(Timestamp) + "\t" + country_name);
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);	
+				}else{
+            		text.clear();
+            		text.set("src\t" + Long.toString(Timestamp) + "\tOTHERS");
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);
+				}
+				
+				ipAddress = InetAddress.getByName(dst_ip);
+				try {
+					response = reader.country(ipAddress);
+					exist = true;
+				} catch (GeoIp2Exception e) {
+					exist = false;
+				}
+				if(exist == true){
+        			country = response.getCountry();
+            		country_name = get_country(country.getName());
+            		text.clear();
+            		text.set("dst\t" + Long.toString(Timestamp) + "\t" + country_name);
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);	
+				}else{
+            		text.clear();
+            		text.set("dst\t" + Long.toString(Timestamp) + "\tOTHERS");
+					longwrite.set(Caplen);
+					output.collect(text, longwrite);
+				}
+				
+			}else{//非ipv6或ipv4
+
+			}
 		}
 	}
 	
 	public static class Reduce_Stats1 extends MapReduceBase 
 	implements Reducer<Text, LongWritable, Text, LongWritable> {	
-		private String[] s;
 		private long sum;
+		private long count;
+		private String temp;
 		private MultipleOutputs multipleoutputs;
     	private OutputCollector<Text, LongWritable> collector ;
 		private LongWritable longwrite = new LongWritable();
@@ -258,23 +319,19 @@ public class Network_analyzer {
 	                    OutputCollector<Text, LongWritable> output, Reporter reporter)
 	                    throws IOException {
 	       sum = 0;
-	       
+	       count = 0;
 	        while(value.hasNext()){
 	        	sum += value.next().get();
+	        	count ++;
 	        }
+	        temp = key.toString();
+	        key.clear();
+	        key.set("bc\t"+temp);
+	        output.collect(key, new LongWritable(sum));
+	        key.clear();
+	        key.set("pc\t"+temp);
+	        output.collect(key, new LongWritable(count));
 	        
-	        s = key.toString().split("\t", 3);
-	        if(s[0].equals("pc") && s[1].equals("src")){
-	        	collector = multipleoutputs.getCollector("pcsrc", reporter);
-	        }else if(s[0].equals("bc") && s[1].equals("src")){
-	        	collector = multipleoutputs.getCollector("bcsrc", reporter);
-	        }else if(s[0].equals("pc") && s[1].equals("dst")){
-	        	collector = multipleoutputs.getCollector("pcdst", reporter);
-	        }else{
-	        	collector = multipleoutputs.getCollector("bcdst", reporter);
-	        }
-	        longwrite.set(sum);
-	        collector.collect(key, longwrite);
 	    }
 
 	    @Override
@@ -293,27 +350,11 @@ public class Network_analyzer {
 				OutputCollector<Text, LongWritable> output, Reporter reporter) throws IOException {
 			
 			substring = value.toString().split("\t");
-			if(substring[0].equals("pc") && substring[1].equals("src")){
-				text.clear();
-				text.set("pc_src\t"+substring[3]);
-				longwrite.set(Long.parseLong(substring[4].trim()));
-				output.collect(text, longwrite);
-			}else if(substring[0].equals("bc") && substring[1].equals("src")){
-				text.clear();
-				text.set("bc_src\t"+substring[3]);
-				longwrite.set(Long.parseLong(substring[4].trim()));
-				output.collect(text, longwrite);
-			}else if(substring[0].equals("pc") && substring[1].equals("dst")){
-				text.clear();
-				text.set("pc_dst\t"+substring[3]);
-				longwrite.set(Long.parseLong(substring[4].trim()));
-				output.collect(text, longwrite);
-			}else if(substring[0].equals("bc") && substring[1].equals("dst")){
-				text.clear();
-				text.set("bc_dst\t"+substring[3]);
-				longwrite.set(Long.parseLong(substring[4].trim()));
-				output.collect(text, longwrite);
-			}
+			text.clear();
+			text.set(substring[0]+"\t"+substring[1]+"\t"+substring[3]);
+			longwrite.set(Long.parseLong(substring[4].trim()));
+			output.collect(text, longwrite);
+			
 		}
 		
 	}

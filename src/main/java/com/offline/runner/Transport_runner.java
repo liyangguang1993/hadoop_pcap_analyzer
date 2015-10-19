@@ -94,18 +94,16 @@ public class Transport_runner {
 			}
 			i++;
 		}
-		
 		conf.setInt("pcap.record.sort.topN", topN);
-		
-		if(rtag==false) 
-			srcFilename = INPATH+"/";
-		
-		Path inputPath = new Path(srcFilename);
-			
-		System.out.println(" begin"+srcFilename);
+		conf.setStrings("pcap.record.srcDir", srcFilename);
+		conf.setStrings("pcap.record.dstDir", dstFilename);
+		//conf.setLong("pcap.file.captime.min", cap_start);
+		//conf.setLong("pcap.file.captime.max", cap_end);
+
+		System.out.println("begin"+srcFilename+dstFilename);
 		
 		Transport_analyzer analyzer = new Transport_analyzer(conf);
-		analyzer.start(inputPath, dstFilename);
+		analyzer.start();
 			
 		System.out.println("finished");
 		

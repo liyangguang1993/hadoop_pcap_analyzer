@@ -6,8 +6,8 @@ import java.util.Iterator;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.ObjectWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
@@ -22,8 +22,9 @@ import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapred.TextOutputFormat;
 import org.apache.hadoop.mapred.lib.MultipleOutputs;
 
-import com.offline.Package_IO.CombinePcapInputFormat;
-import com.offline.Package_IO.Packet;
+import com.offline.Package_IO.*;
+import com.offline.Package_IO.BinaryUtils;
+import com.offline.Package_IO.Bytes;
 
 public class Application_analyzer {
 		
@@ -31,24 +32,30 @@ public class Application_analyzer {
 	public JobConf conf;
 	private int period;
 	private int hour = 60*60*1000;
+	private String srcFileName;
+	private String dstFileName;
+	
 	public Application_analyzer(){
 		this.conf = new JobConf();
 		this.period = 24;
 	}
 	public Application_analyzer(JobConf conf){
 		this.conf = conf;
-		this.period = conf.getInt("pcap.record.rate.period", 0);
+		this.period = conf.getInt("pcap.record.rate.period", 24);
+		this.srcFileName = conf.getStrings("pcap.record.srcDir")[0];
+		this.dstFileName = conf.getStrings("pcap.record.dstDir")[0];
 	}
 	
-	public void start(Path inputDir, String outputDir){
+	public void start(){
         
     	try{
 	        Date date = new Date();
     		long time = date.getTime();
     		time =  time-(time+8*hour)%(period*hour);
     		String Date = Long.toString(time);
-    		String dstFilename= outputDir + "state1/"+Date+"/";
+    		String dstFilename= dstFileName + "state1/"+Date+"/";
     	    Path output_path = new Path(dstFilename);
+    	    Path inputDir = new Path(srcFileName);
     	    
     		FileSystem fs = FileSystem.get(conf);
 	        JobConf job_state1 = get_state1_JobConf("transport_analyse_job", inputDir, output_path);   
@@ -58,7 +65,7 @@ public class Application_analyzer {
 	        }
 	        JobClient.runJob(job_state1);  
 	       
-	        dstFilename= outputDir + "state2/"+Date+"/";
+	        dstFilename= dstFileName + "state2/"+Date+"/";
     	    output_path = new Path(dstFilename);
 	        Path job1_output = FileOutputFormat.getOutputPath(job_state1);
 	        JobConf job_state2 = get_state2_JobConf("transport_analyse_job2", job1_output, output_path);  
@@ -91,10 +98,10 @@ public class Application_analyzer {
         conf.setNumReduceTasks(1);       
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(LongWritable.class);	       
-       	conf.setInputFormat(CombinePcapInputFormat.class);          
+       	conf.setInputFormat(PcapInputFormat.class);          
         conf.setOutputFormat(TextOutputFormat.class);     
         conf.setMapperClass(Map_Stats1.class);
-        conf.setCombinerClass(Reduce_Stats1.class);          
+        //conf.setCombinerClass(Reduce_Stats1.class);          
         conf.setReducerClass(Reduce_Stats1.class);    
         MultipleOutputs.addNamedOutput(conf,"pc",TextOutputFormat.class,Text.class,LongWritable.class);  
         MultipleOutputs.addNamedOutput(conf,"bc",TextOutputFormat.class,Text.class,LongWritable.class); 
@@ -128,6 +135,7 @@ public class Application_analyzer {
         return conf;
 	} 
 	
+	@SuppressWarnings("unused")
 	private JobConf get_state3_JobConf(String jobName, Path inFilePath, Path outFilePath){//获取第二阶段工作配置
 		JobConf conf = new JobConf(Application_analyzer.class);
 
@@ -148,20 +156,22 @@ public class Application_analyzer {
 	} 
 	
 	public static class Map_Stats1 extends MapReduceBase 
-	implements Mapper<LongWritable, ObjectWritable, Text, LongWritable>{
+	implements Mapper<LongWritable, BytesWritable, Text, LongWritable>{
 		private int interval = 60;		
-	    private Object object;
-	    private Packet packet;
-	    private int ip_version;
-	    private String protocol;
-	    private long timestamp;
-	    private String src_ip;
-	    private String dst_ip;
+		private byte[] ip_ver = new byte[1];											//ip协议版本
+		private byte[] proto = new byte[1];								//协议类型
+		private byte[] timestamp = new byte[4];					//开始时间
+		private byte[] caplen = new byte[4];
+		private byte[] port = new byte[2];
+		private byte[] hlen = new byte[1];
+	    private String protocol_type;
+		private long Caplen;
+		private long Timestamp;
 	    private int src_port;
 	    private int dst_port;
-	    private int pc;
-	    private int bc;
-	    private String protocol_type;
+		private int Optlen;
+		private byte[] value_bytes;
+		
 	    private Text text = new Text();
 		private LongWritable longwrite = new LongWritable();
 		
@@ -170,65 +180,96 @@ public class Application_analyzer {
 		}	
 		
 		public void map		
-				(LongWritable key, ObjectWritable value, 
+				(LongWritable key, BytesWritable value, 
 				OutputCollector<Text, LongWritable> output, Reporter reporter) throws IOException {
-			packet = (Packet)value.get();
 			
-	        if (packet != null) {
-	        	object = packet.get(Packet.IP_VERSION);
-	        	
-	            if (object != null) {
-	            	ip_version = (Integer)object;
-	            	timestamp = (Long)packet.get(Packet.TIMESTAMP);
-	            	timestamp = timestamp - timestamp%interval;
-	            	
-	            	if(ip_version == 4 || ip_version == 6){
-	            		
-	            		protocol = (String) packet.get(Packet.PROTOCOL);
-	            		bc = (Integer) packet.get(Packet.LEN);
-	            		pc = 1;
-	            		object = packet.get(Packet.SRC_PORT);
-	            		if(object != null)		src_port = (Integer)object;
-	            		else	src_port = -1;
-	            		object = packet.get(Packet.DST_PORT);
-	            		if(object != null)		src_port = (Integer)object;
-	            		else	src_port = -1;
-	            		if(protocol != null)
-	            		if(protocol.equals("UDP"))
-	            			protocol_type = get_protocol_type_UDP(src_port, dst_port);
-	            		else if(protocol.equals("TCP"))
-	            			protocol_type = get_protocol_type_TCP(src_port, dst_port);
-	            		else
-	            			protocol_type = "UNKNOW";
-	            		
-	            		text.clear();
-	            		text.set(/*"bc\t"+*/Long.toString(timestamp) + "\t"+protocol_type);
-	            		longwrite.set(bc);
-	            		output.collect(text, longwrite);	
-	            		/*text.clear();
-	            		text.set("pc\t"+Long.toString(timestamp) + "\t"+protocol_type);
-	            		longwrite.set(pc);
-	            		output.collect(text, longwrite);	
-	            		
-	            		src_ip = (String)packet.get(Packet.SRC);
-	            		dst_ip = (String)packet.get(Packet.DST);
-	            		text.clear();
-						text.set("flow\t"+Long.toString(timestamp) + "\t" + src_ip  + "\t"+ dst_ip+"\t"+protocol_type);
-						longwrite.set(1);
-						output.collect(text, longwrite);	*/
-	            	}else{
-	            		//TODO
-	            		//如何处理非ipv4或ipv6的数据包？
-	            	}
-	            }else{//ip_version == null
-	            	/*timestamp = (Long)packet.get(Packet.TIMESTAMP);
-	            	timestamp = timestamp - timestamp%interval;
-	            	text.clear();
-	        		text.set("pc\t"+Long.toString(timestamp)+"\tUNKNOW");
-	        		longwrite.set(1);
-	        		output.collect(text, longwrite);	*/
-	            }//if(IP)
-	        }
+			value_bytes = value.getBytes();
+			if(value_bytes.length < 42) return;//若不够长则不分析
+			
+			//获取时间戳
+			System.arraycopy(value_bytes, PcapRec.POS_TSTAMP, timestamp, 0 , PcapRec.LEN_TSTAMP);	
+			Timestamp = Bytes.toLong(BinaryUtils.flipBO(timestamp,4));
+			Timestamp = Timestamp - (Timestamp%interval);
+
+			//获取数据包长度
+			System.arraycopy(value_bytes, PcapRec.POS_CAPLEN, caplen, 0 , PcapRec.LEN_CAPLEN);	
+			Caplen = Bytes.toInt(BinaryUtils.flipBO(caplen, 4));
+			
+			//获取ip-version
+			System.arraycopy(value_bytes, PcapRec.POS_IP_VER, ip_ver, 0, PcapRec.LEN_IP_VER);
+			 ip_ver[0] = (byte) (ip_ver[0]&0xf0);	
+			if(ip_ver[0]== PcapRec.IPV4){
+				
+				//获取协议类型
+				System.arraycopy(value_bytes, PcapRec.POS_IPV4_PROTO, proto, 0 , PcapRec.LEN_IPV4_PROTO);	
+				
+				if(Bytes.toInt(proto) == PcapRec.ICMP){
+					protocol_type = "ICMP";
+					
+				}else if(Bytes.toInt(proto) == PcapRec.TCP){
+					//获取ip头长度，以定位到端口位置
+					System.arraycopy(value_bytes, PcapRec.POS_HL_IPV4, hlen, 0, hlen.length);					
+					Optlen = (hlen[0] & 0x0f)*4 - 20;
+					//获取端口号
+					System.arraycopy(value_bytes, PcapRec.POS_IPV4_SP+Optlen, port, 0, port.length);
+					src_port = Bytes.toInt(port);
+					System.arraycopy(value_bytes, PcapRec.POS_IPV4_DP+Optlen, port, 0, port.length);
+					dst_port = Bytes.toInt(port);
+					
+					protocol_type = get_protocol_type_UDP(src_port, dst_port);
+					
+				}else if(Bytes.toInt(proto) == PcapRec.UDP){
+					//获取ip头长度，以定位到端口位置
+					System.arraycopy(value_bytes, PcapRec.POS_HL_IPV4, hlen, 0, hlen.length);					
+					Optlen = (hlen[0] & 0x0f)*4 - 20;
+					//获取端口号
+					System.arraycopy(value_bytes, PcapRec.POS_IPV4_SP+Optlen, port, 0, port.length);
+					src_port = Bytes.toInt(port);
+					System.arraycopy(value_bytes, PcapRec.POS_IPV4_DP+Optlen, port, 0, port.length);
+					dst_port = Bytes.toInt(port);
+					
+					protocol_type = get_protocol_type_UDP(src_port, dst_port);
+					
+				}else{
+					protocol_type = "UNKNOW";
+				}
+				
+			}else if(ip_ver[0]== PcapRec.IPV6){
+				
+				//获取协议类型
+				System.arraycopy(value_bytes, PcapRec.POS_IPV6_PROTO, proto, 0 , PcapRec.LEN_IPV6_PROTO);	
+				
+				if(Bytes.toInt(proto) == PcapRec.ICMP){
+					protocol_type = "ICMP";
+				}else if(Bytes.toInt(proto) == PcapRec.TCP){
+					//获取端口号
+					System.arraycopy(value_bytes, PcapRec.POS_IPV6_SP+Optlen, port, 0, port.length);
+					src_port = Bytes.toInt(port);
+					System.arraycopy(value_bytes, PcapRec.POS_IPV6_DP+Optlen, port, 0, port.length);
+					dst_port = Bytes.toInt(port);
+					
+					protocol_type = get_protocol_type_UDP(src_port, dst_port);
+					
+				}else if(Bytes.toInt(proto) == PcapRec.UDP){
+					//获取端口号
+					System.arraycopy(value_bytes, PcapRec.POS_IPV6_SP+Optlen, port, 0, port.length);
+					src_port = Bytes.toInt(port);
+					System.arraycopy(value_bytes, PcapRec.POS_IPV6_DP+Optlen, port, 0, port.length);
+					dst_port = Bytes.toInt(port);
+					
+					protocol_type = get_protocol_type_UDP(src_port, dst_port);
+					
+				}else{
+					protocol_type = "UNKNOW";
+				}
+			}else{
+				protocol_type = "UNKNOW";
+			}
+			text.clear();
+			text.set(Long.toString(Timestamp) + "\t"+protocol_type);
+	        longwrite.set(Caplen);
+	        output.collect(text, longwrite);	
+	        
 	    }//map
 	}//Map_States1
 	
@@ -237,35 +278,30 @@ public class Application_analyzer {
 	
 		private MultipleOutputs multipleoutputs;
 		private  long sum = 0;
-		private String[] k;
-    	private OutputCollector<Text, LongWritable> collector ;
+		private long count = 0;
+		private String temp;
 		@Override
 		public void configure(JobConf conf){
 			multipleoutputs = new MultipleOutputs(conf);
 		}
 		
-	    @SuppressWarnings("unchecked")
-		public void reduce(Text key, Iterator<LongWritable> value,
+	    public void reduce(Text key, Iterator<LongWritable> value,
 	                    OutputCollector<Text, LongWritable> output, Reporter reporter)
 	                    throws IOException {
-	       sum = 0;
-	      
-	        while(value.hasNext()){
+	      sum = 0;
+	      count = 0;
+	       while(value.hasNext()){
 	        	sum += value.next().get();
+	        	count ++;
 	        }
-	        output.collect(key, new LongWritable(sum)); 
-	        /*k = key.toString().split("\t");
-	    	if(k[0].equals("bc")){
-	    		collector = multipleoutputs.getCollector("bc", reporter);
-	    		collector.collect(key, new LongWritable(sum));
-	    	}else if(k[0].equals("pc")){
-	    		collector = multipleoutputs.getCollector("pc", reporter);
-	    		collector.collect(key, new LongWritable(sum));
-	    	}else if(k[0].equals("flow")){
-	    		collector = multipleoutputs.getCollector("flow", reporter);
-	    		collector.collect(new Text(k[0].toString() +"\t"+ k[1].toString() + "\t"+ k[4].toString()), new LongWritable(1));
-	    	}*/
-	    	
+	        temp = key.toString();
+	        key.clear();
+	        key.set("bc\t"+temp);
+	        output.collect(key, new LongWritable(sum));
+	        key.clear();
+	        key.set("pc\t"+temp);
+	        output.collect(key, new LongWritable(count));
+	  
 	    }
 	    
 	    @Override
@@ -282,12 +318,7 @@ public class Application_analyzer {
 		public void map(LongWritable key, Text value, OutputCollector<Text, LongWritable> output, Reporter reporter) throws IOException {
 			
 			substring = value.toString().split("\t");
-			output.collect(new Text(substring[1]), new LongWritable(Long.parseLong(substring[2].trim())));
-			/*if(substring[0].equals("flow")){
-				output.collect(new Text(substring[0]+"\t"+substring[1]+"\t"+substring[2]), new LongWritable(Long.parseLong(substring[3].trim())));
-			}else{
-				output.collect(new Text(substring[0]+"\t"+substring[2]), new LongWritable(Long.parseLong(substring[3].trim())));
-			}*/
+			output.collect(new Text(substring[0]+"\t"+substring[2]), new LongWritable(Long.parseLong(substring[3])));
 			
 			
 		}
@@ -297,14 +328,12 @@ public class Application_analyzer {
     public static class Reduce_Stats2 extends MapReduceBase 
 	implements Reducer<Text, LongWritable, Text, LongWritable> {
     	private long sum;
-    	private String[] substring;
     	private MultipleOutputs multipleoutputs;
-    	private OutputCollector<Text, LongWritable> collector ;
     	@Override
 		public void configure(JobConf conf){
 			multipleoutputs = new MultipleOutputs(conf);
 		}
-	    @SuppressWarnings("unchecked")
+
 		public void reduce(Text key, Iterator<LongWritable> value,
 	                    OutputCollector<Text, LongWritable> output, Reporter reporter)
 	                    throws IOException {

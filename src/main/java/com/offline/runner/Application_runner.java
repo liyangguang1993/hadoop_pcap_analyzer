@@ -96,16 +96,15 @@ public class Application_runner {
 		}
 		
 		conf.setInt("pcap.record.sort.topN", topN);
+		conf.setStrings("pcap.record.srcDir", srcFilename);
+		conf.setStrings("pcap.record.dstDir", dstFilename);
+		//conf.setLong("pcap.file.captime.min", cap_start);
+		//conf.setLong("pcap.file.captime.max", cap_end);
 		
-		if(rtag==false) 
-			srcFilename = INPATH+"/";
-		
-		Path inputPath = new Path(srcFilename);
-			
 		System.out.println(" begin"+srcFilename);
 		
 		Application_analyzer analyzer = new Application_analyzer(conf);
-		analyzer.start(inputPath, dstFilename);
+		analyzer.start();
 			
 		System.out.println("finished");
 		

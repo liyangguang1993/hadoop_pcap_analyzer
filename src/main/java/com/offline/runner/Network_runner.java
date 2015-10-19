@@ -110,25 +110,15 @@ public class Network_runner {
 		
 		conf.setInt("pcap.record.sort.topN", topN);
 		conf.setStrings("pcap.record.dbDir", dbFilename);
+		conf.setStrings("pcap.record.srcDir", srcFilename);
+		conf.setStrings("pcap.record.dstDir", dstFilename);
+		//conf.setLong("pcap.file.captime.min", cap_start);
+		//conf.setLong("pcap.file.captime.max", cap_end);
 		
-		Path inputPath = new Path(srcFilename);
-			
 		System.out.println(" begin\nsource:"+srcFilename);
-		
-		Date date = new Date();
-		long time = date.getTime();
-		System.out.println(time);
-		System.out.println(time);
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy_MM_dd_HH");
-		String Date = sdf.format(new Date(time));
-		System.out.println(Date);
-		time =  time-(time+8*60*60*1000)%(period*60*60*1000);
-		System.out.println(time);
-		Date = sdf.format(new Date(time));
-		System.out.println(Date);
-		
+
 		Network_analyzer analyzer = new Network_analyzer(conf);
-		analyzer.start(inputPath, dstFilename, cap_start, cap_end);
+		analyzer.start();
 		
 		System.out.println("finished");
 		
