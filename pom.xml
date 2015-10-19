@@ -53,42 +53,21 @@
   </dependencies>
   
     <build>
+
   	<plugins>
-  	
-  	<plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <source>1.5</source>
-          <target>1.5</target>
-        </configuration>
-      </plugin>
-      
-  	    <plugin>  
-        <groupId>org.apache.maven.plugins</groupId>  
-        <artifactId>maven-assembly-plugin</artifactId>  
-        <version>2.3</version>  
-        <configuration>  
-            <appendAssemblyId>false</appendAssemblyId>  
-            <descriptorRefs>  
-                <descriptorRef>jar-with-dependencies</descriptorRef>  
-            </descriptorRefs>  
-            <archive>  
-                <manifest>  
-                    <mainClass></mainClass>  
-                </manifest>  
-            </archive>  
-        </configuration>  
-        <executions>  
-            <execution>  
-                <id>make-assembly</id>  
-                <phase>package</phase>  
-                <goals>  
-                    <goal>assembly</goal>  
-                </goals>  
-            </execution>  
-        </executions>  
-    </plugin>  
+
+  	<resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>  
+                <include>**/*.mmdb</include> 
+            	</includes>  
+            <filtering>false</filtering>  
+            </resource>
+        </resources>
+
+
   	</plugins>
+
 	</build>
 </project>
