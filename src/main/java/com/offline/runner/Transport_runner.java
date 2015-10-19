@@ -17,7 +17,7 @@ public class Transport_runner {
 	public static void main(String[] args) throws Exception{
 		String srcFilename = new String();		
 		String dstFilename= OUTPATH+"/";
-		int topN = 0;
+		int topN = 1;
 		int period = 24;
 		int interval = 60;
 		boolean rtag = false;

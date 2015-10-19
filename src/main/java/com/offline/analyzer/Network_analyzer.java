@@ -44,8 +44,10 @@ public class Network_analyzer {
 	public int hour=60*60*1000;
 	private String srcFileName;
 	private String dstFileName;
+	private int reducer_num;
 	private long cap_start;
 	private long cap_end;
+
 	public Network_analyzer(){
 		this.conf = new JobConf();
 		this.period = 24;
@@ -56,6 +58,7 @@ public class Network_analyzer {
 		this.period = conf.getInt("pcap.record.rate.period", 24);
 		this.srcFileName = conf.getStrings("pcap.record.srcDir")[0];
 		this.dstFileName = conf.getStrings("pcap.record.dstDir")[0];
+		this.reducer_num = conf.getInt("pcap.record.sort.topN", 1);
 	}
 	
 	/*
@@ -74,8 +77,8 @@ public class Network_analyzer {
     		String Date = Long.toString(time);
 
     		String dstFilename= this.dstFileName + "country_period/"+Date+"/";
-    	    Path output_path = new Path(dstFilename);
-    	    Path inputDir = new Path(this.srcFileName);
+    	        Path output_path = new Path(dstFilename);
+    	        Path inputDir = new Path(this.srcFileName);
     	    
 	        FileSystem fs = FileSystem.get(conf);
 	        JobConf State1 = get_state1_JobConf("state1", output_path, inputDir);   
@@ -105,7 +108,7 @@ public class Network_analyzer {
 		JobConf conf = new JobConf(this.conf, Network_analyzer.class);
 		
         conf.setJobName(jobName);     
-        conf.setNumReduceTasks(1);       
+        conf.setNumReduceTasks(reducer_num);       
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(LongWritable.class);	       
        	conf.setInputFormat(PcapInputFormat.class);          
@@ -168,7 +171,7 @@ public class Network_analyzer {
 		public void configure(JobConf conf){
 			interval = conf.getInt("pcap.record.rate.interval", 0);		
 			dbDir = conf.getStrings("pcap.record.dbDir")[0];
-			database = new File(dbDir+"GeoLite2-Country.mmdb");
+			database = new File(this.getClass().getResource("/GeoLite2-Country.mmdb").getFile());
 			 try {
 				reader = new DatabaseReader.Builder(database).build();
 			} catch (IOException e) {

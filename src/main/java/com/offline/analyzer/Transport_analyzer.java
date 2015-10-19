@@ -35,6 +35,7 @@ public class Transport_analyzer {
 	private int hour = 60*60*1000;
 	private String srcFileName;
 	private String dstFileName;
+	private int reducer_num;
 	
 	public Transport_analyzer(){
 		this.conf = new JobConf();
@@ -46,6 +47,7 @@ public class Transport_analyzer {
 		this.period = conf.getInt("pcap.record.rate.period", 0);
 		this.srcFileName = conf.getStrings("pcap.record.srcDir")[0];
 		this.dstFileName = conf.getStrings("pcap.record.dstDir")[0];
+		this.reducer_num = conf.getInt("pcap.record.sort.topN", 1);
 	}
 	
     public void start(){
@@ -86,7 +88,7 @@ public class Transport_analyzer {
 	private JobConf get_transport_analyse_JobConf(String jobName, Path inFilePath, Path outFilePath){//获取第一阶段工作配置
 		
         conf.setJobName(jobName);     
-        conf.setNumReduceTasks(20);       
+        conf.setNumReduceTasks(reducer_num);       
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(LongWritable.class);	       
        	conf.setInputFormat(PcapInputFormat.class);          

@@ -11,63 +11,103 @@
   <url>http://mvnrepository.com/</url>
 
   <properties>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+   	<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
   <dependencies>
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>3.8.1</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-	<groupId>org.apache.hadoop</groupId>
-	<artifactId>hadoop-core</artifactId>
-	<version>1.2.1</version>
-    </dependency>
-    <dependency>
-	<groupId>com.google.guava</groupId>
-	<artifactId>guava</artifactId>
-	<version>18.0</version>
-  </dependency>  
-      <dependency>
-        <groupId>com.maxmind.geoip2</groupId>
-        <artifactId>geoip2</artifactId>
-        <version>2.3.1</version>
-    </dependency>
+	<dependency>
+		<groupId>junit</groupId>
+		<artifactId>junit</artifactId>
+		<version>3.8.1</version>
+		<scope>test</scope>
+	</dependency>
+
+    	<dependency>
+		<groupId>org.apache.hadoop</groupId>
+		<artifactId>hadoop-core</artifactId>
+		<version>1.2.1</version>
+	</dependency>
+
+    	<dependency>
+		<groupId>com.google.guava</groupId>
+		<artifactId>guava</artifactId>
+		<version>18.0</version>
+  	</dependency>  
+
+      	<dependency>
+        	<groupId>com.maxmind.geoip2</groupId>
+        	<artifactId>geoip2</artifactId>
+        	<version>2.3.1</version>
+    	</dependency>
     
-    <dependency>
-	<groupId>org.apache.hive</groupId>
-	<artifactId>hive-serde</artifactId>
-	<version>1.1.1</version>
-</dependency>
+    	<dependency>
+		<groupId>org.apache.hive</groupId>
+		<artifactId>hive-serde</artifactId>
+		<version>1.1.1</version>
+	</dependency>
     
-<dependency>
-	<groupId>org.apache.hive</groupId>
-	<artifactId>hive-exec</artifactId>
-	<version>1.1.1</version>
-</dependency>
+	<dependency>
+		<groupId>org.apache.hive</groupId>
+		<artifactId>hive-exec</artifactId>
+		<version>1.1.1</version>
+	</dependency>
 
       
   </dependencies>
   
-    <build>
+  <build>
 
-  	<plugins>
+	<resources>
 
-  	<resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <includes>  
-                <include>**/*.mmdb</include> 
-            	</includes>  
-            <filtering>false</filtering>  
-            </resource>
-        </resources>
+		<resource>
+                	<directory>src/main/resources</directory>
+                	<includes>  
+                	<include>**/*.mmdb</include> 
+            		</includes>  
+            		<filtering>false</filtering>  
+            	</resource>
 
+ 	</resources>
+		
+	<plugins>  
 
-  	</plugins>
+		<plugin>  
+			<groupId>org.apache.maven.plugins</groupId>  
+	      		<artifactId>maven-compiler-plugin</artifactId>  
+	      		<configuration>  
+	        		<source>1.5</source>  
+	        		<target>1.5</target>  
+	      		</configuration>  
+	    	</plugin>  
 
-	</build>
+		<plugin>
+			<groupId>org.apache.maven.plugins</groupId>
+			<artifactId>maven-assembly-plugin</artifactId>
+			<version>2.4.1</version>
+			<configuration>
+				<!-- get all project dependencies -->
+				<descriptorRefs>
+				<descriptorRef>jar-with-dependencies</descriptorRef>
+				</descriptorRefs>
+				<!-- MainClass in mainfest make a executable jar -->
+				<archive>
+				<manifest>
+					<mainClass></mainClass>
+				</manifest>
+				</archive>
+			</configuration>
+			<executions>
+				<execution>
+					<id>make-assembly</id>
+                                	<!-- bind to the packaging phase -->
+					<phase>package</phase> 
+					<goals>
+					<goal>single</goal>
+					</goals>
+				</execution>
+			</executions>
+		</plugin>
+
+	</plugins>  
+  </build>
 </project>

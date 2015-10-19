@@ -34,6 +34,7 @@ public class Application_analyzer {
 	private int hour = 60*60*1000;
 	private String srcFileName;
 	private String dstFileName;
+	private int reducer_num;
 	
 	public Application_analyzer(){
 		this.conf = new JobConf();
@@ -44,6 +45,7 @@ public class Application_analyzer {
 		this.period = conf.getInt("pcap.record.rate.period", 24);
 		this.srcFileName = conf.getStrings("pcap.record.srcDir")[0];
 		this.dstFileName = conf.getStrings("pcap.record.dstDir")[0];
+		this.reducer_num = conf.getInt("pcap.record.sort.topN", 1);
 	}
 	
 	public void start(){
@@ -95,7 +97,7 @@ public class Application_analyzer {
 	private JobConf get_state1_JobConf(String jobName, Path inFilePath, Path outFilePath){//获取第一阶段工作配置
 
         conf.setJobName(jobName);     
-        conf.setNumReduceTasks(1);       
+        conf.setNumReduceTasks(reducer_num);       
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(LongWritable.class);	       
        	conf.setInputFormat(PcapInputFormat.class);          

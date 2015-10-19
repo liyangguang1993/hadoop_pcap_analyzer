@@ -22,7 +22,7 @@ public class Network_runner {
 		String srcFilename=INPATH+"/";		
 		String dstFilename=OUTPATH+"/";
 		String dbFilename =DBPATH+"/";
-		int topN = 0;
+		int topN = 1;
 		int period = 24;
 		int interval = 60;
 		long cap_start = Long.MAX_VALUE;
