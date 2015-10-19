@@ -10,7 +10,7 @@ import com.offline.analyzer.Network_analyzer;
 public class Network_runner {
 	static final String INPATH = "/hduser/sample_input";
 	static final String OUTPATH = "/hduser/network_result";
-	static final String DBPATH = "resource";
+	static final String DBPATH = "/home/seasun/下载";
 	
 	static JobConf conf = new JobConf(Network_analyzer.class);
 
